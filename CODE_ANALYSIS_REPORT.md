@@ -586,42 +586,57 @@ export const storage = {
 
 ### 7.3 性能优化
 
-#### 建议 7: 实现虚拟列表
+#### 建议 7: 修复分页逻辑
+
+**当前问题**: [HomePage.tsx:55-58](src/pages/HomePage.tsx#L55-L58) 的分页逻辑存在 bug
+
+**修复方案**:
 
 ```typescript
-import { useVirtualizer } from '@tanstack/react-virtual'
+// 使用 useRef 防止重复调用
+const loadingRef = useRef(false)
+
+const loadMore = useCallback(() => {
+  if (loadingRef.current || !hasMore) return
+  
+  loadingRef.current = true
+  const pageSize = 9
+  const start = displayItems.length
+  const end = start + pageSize
+  const newItems = filteredItems.slice(start, end)
+
+  if (newItems.length > 0) {
+    setDisplayItems(prev => [...prev, ...newItems])
+  }
+  
+  if (end >= filteredItems.length) {
+    setHasMore(false)
+  }
+  
+  loadingRef.current = false
+}, [displayItems.length, filteredItems, hasMore])
+```
+
+#### 建议 8: 搜索防抖
+
+```typescript
+// 使用 React 18 的 useDeferredValue
+import { useDeferredValue } from 'react'
 
 function HomePage({ items }: Props) {
-  const parentRef = useRef<HTMLDivElement>(null)
-
-  const virtualizer = useVirtualizer({
-    count: items.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 120,
-    overscan: 5,
-  })
-
-  return (
-    <div ref={parentRef} style={{ height: '100vh', overflow: 'auto' }}>
-      <div style={{ height: virtualizer.getTotalSize() }}>
-        {virtualizer.getVirtualItems().map((virtualItem) => (
-          <div
-            key={virtualItem.key}
-            style={{
-              position: 'absolute',
-              transform: `translateY(${virtualItem.start}px)`,
-            }}
-          >
-            <ItemCard item={items[virtualItem.index]} />
-          </div>
-        ))}
-      </div>
-    </div>
-  )
+  const [searchValue, setSearchValue] = useState('')
+  const deferredSearch = useDeferredValue(searchValue)
+  
+  const filteredItems = useMemo(() => {
+    if (!deferredSearch) return items
+    return items.filter(item => 
+      item.name.toLowerCase().includes(deferredSearch.toLowerCase())
+    )
+  }, [items, deferredSearch])
 }
 ```
 
-#### 建议 8: 图片优化方案
+#### 建议 9: 图片优化
 
 ```typescript
 // 1. 限制图片大小
@@ -632,23 +647,24 @@ const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
   if (!file) return
 
   if (file.size > MAX_FILE_SIZE) {
-    Toast.show('图片大小不能超过 5MB')
+    Dialog.alert({ content: '图片大小不能超过 5MB' })
     return
   }
 
-  // 2. 压缩图片
-  compressImage(file).then((compressed) => {
-    setImage(compressed)
-  })
+  const reader = new FileReader()
+  reader.onload = (event) => {
+    if (event.target?.result) {
+      setImage(event.target.result as string)
+      setSheetVisible(false)
+    }
+  }
+  reader.readAsDataURL(file)
 }
-
-// 3. 使用图片 CDN
-const imageUrl = `https://cdn.example.com/${imageId}?w=200&h=200&q=80`
 ```
 
 ### 7.4 用户体验优化
 
-#### 建议 9: 添加 PWA 支持
+#### 建议 10: 添加 PWA 支持
 
 ```typescript
 // vite.config.ts
@@ -675,7 +691,7 @@ export default defineConfig({
 })
 ```
 
-#### 建议 10: 添加暗黑模式
+#### 建议 11: 添加暗黑模式
 
 ```typescript
 // hooks/useTheme.ts
@@ -704,7 +720,7 @@ export function useTheme() {
 
 ### 7.5 工程化改进
 
-#### 建议 11: 添加 ESLint 配置
+#### 建议 12: 添加 ESLint 配置
 
 ```json
 // .eslintrc.json
@@ -722,23 +738,16 @@ export function useTheme() {
 }
 ```
 
-#### 建议 12: 添加测试
+#### 建议 13: 添加类型检查脚本
 
-```typescript
-// __tests__/HomePage.test.tsx
-import { render, screen } from '@testing-library/react'
-import HomePage from '../src/pages/HomePage'
-
-describe('HomePage', () => {
-  it('should render items correctly', () => {
-    const items = [
-      { id: 1, name: 'Test Item', location: 'Test', category: '上衣' }
-    ]
-    render(<HomePage items={items} onDelete={jest.fn()} onAdd={jest.fn()} />)
-    
-    expect(screen.getByText('Test Item')).toBeInTheDocument()
-  })
-})
+```json
+// package.json scripts
+{
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx"
+  }
+}
 ```
 
 ---
@@ -778,39 +787,6 @@ describe('HomePage', () => {
 3. **图片存储**: 使用 Base64 存储图片效率低
 4. **缺少测试**: 无单元测试和集成测试
 5. **缺少文档**: 无组件文档和 API 文档
-
----
-
-## 九、附录
-
-### 9.1 文件统计
-
-| 文件类型 | 数量 | 代码行数 |
-|----------|------|----------|
-| TypeScript/TSX | 6 | ~450 |
-| CSS | 4 | ~330 |
-| 配置文件 | 5 | ~80 |
-| **总计** | **15** | **~860** |
-
-### 9.2 依赖分析
-
-**生产依赖** (4 个):
-- react, react-dom: 核心框架
-- react-router-dom: 路由管理
-- antd-mobile: UI 组件库
-
-**开发依赖** (8 个):
-- typescript: 类型检查
-- vite: 构建工具
-- tailwindcss: CSS 框架
-- 其他: 类型定义和插件
-
-### 9.3 参考资料
-
-- [React 官方文档](https://react.dev/)
-- [Ant Design Mobile 文档](https://mobile.ant.design/)
-- [Vite 官方文档](https://vitejs.dev/)
-- [TypeScript 最佳实践](https://www.typescriptlang.org/docs/handbook/declaration-files/do-s-and-don-ts.html)
 
 ---
 
